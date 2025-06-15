@@ -1,0 +1,49 @@
+{
+  "scripts": {
+    "build": "tsc",
+    "deploy": "serverless deploy",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint:tsc": "tsc --noEmit -p ./tsconfig.json",
+    "clean": "rm -rf .serverless node_modules dist",
+    "test:integration": "npm run dynamodb:install && npm run sqs:install && npm run sqs:start && (npm run offline &) && npm run offline:wait && npm run dynamodb:migrate && jest --runInBand --config jest.integration.config.js",
+    "dynamodb:install": "mkdir .dynamodb ; cd .dynamodb && [ -f dynamodb_local_latest.tar.gz ] || curl -O https://s3.us-west-2.amazonaws.com/dynamodb-local/dynamodb_local_latest.tar.gz && tar -xzf dynamodb_local_latest.tar.gz",
+    "dynamodb:migrate": "sls dynamodb migrate",
+    "sqs:install": "mkdir .sqs ; cd .sqs && [ -f elasticmq-server-1.6.12.jar ] || curl -O https://s3-eu-west-1.amazonaws.com/softwaremill-public/elasticmq-server-1.6.12.jar",
+    "sqs:start": "java -jar .sqs/elasticmq-server-1.6.12.jar &",
+    "offline": "AWS_ACCESS_KEY_ID=offline AWS_SECRET_ACCESS_KEY=offline sls offline start --stage dev",
+    "offline:wait": "wait-on tcp:8000",
+    "test:all": "npm run test && npm run test:integration"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.149",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^24.0.1",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
+    "aws-sdk-client-mock": "^4.1.0",
+    "aws-sdk-client-mock-jest": "^4.1.0",
+    "axios": "^1.9.0",
+    "jest": "^30.0.0",
+    "serverless": "^3.40.0",
+    "serverless-dynamodb": "^0.2.56",
+    "serverless-esbuild": "^1.55.1",
+    "serverless-offline": "^13.9.0",
+    "serverless-offline-sns": "^0.78.1",
+    "serverless-offline-sqs": "^8.0.0",
+    "ts-jest": "^29.4.0",
+    "typescript": "^5.8.3",
+    "wait-on": "^8.0.3",
+    "ws": "^8.18.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.828.0",
+    "@aws-sdk/client-apigatewayv2": "^3.829.0",
+    "@aws-sdk/client-dynamodb": "^3.828.0",
+    "@aws-sdk/client-sns": "^3.828.0",
+    "@aws-sdk/client-sqs": "^3.828.0",
+    "@aws-sdk/lib-dynamodb": "^3.828.0",
+    "uuid": "^11.1.0",
+    "zod": "^3.25.64"
+  }
+}

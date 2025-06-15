@@ -1,0 +1,246 @@
+service: task20250615
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: us-east-1
+  architecture: arm64
+  memorySize: 256
+  environment:
+    USERS_TABLE: Users
+    BOARDS_TABLE: Boards
+    MESSAGES_TABLE: Messages
+    CONNECTIONS_TABLE: WebSocketConnections
+    REGISTER_USER_TOPIC_ARN: !Ref RegisterUserTopic
+    POST_MESSAGE_TOPIC_ARN: !Ref PostMessageTopic
+    CREATE_BOARD_QUEUE_URL: !Ref CreateBoardQueue
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:Query
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Scan
+          Resource:
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Users
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Boards
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Messages
+            - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/WebSocketConnections
+
+        - Effect: Allow
+          Action:
+            - sns:Publish
+          Resource:
+            - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:RegisterUserTopic
+            - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:PostMessageTopic
+
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:CreateBoardQueue
+
+        - Effect: Allow
+          Action:
+            - execute-api:ManageConnections
+          Resource:
+            - !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/@connections/*
+
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+
+        - Effect: Allow
+          Action:
+          - apigateway:GET
+          - apigatewayv2:GetApis
+          - apigatewayv2:GetApi
+          Resource: "*"
+
+plugins:
+  - serverless-esbuild
+  - serverless-offline
+  - serverless-dynamodb
+  - serverless-offline-sqs
+  - serverless-offline-sns
+
+custom:
+  serverless-dynamodb:
+    start:
+      port: 8000
+      docker: false
+  serverless-offline-sqs:
+    autoCreate: true
+    apiVersion: '2012-11-05'
+    endpoint: http://localhost:9324
+    region: elasticmq
+    accessKeyId: x
+    secretAccessKey: x
+    skipCacheInvalidation: false
+  elasticmq:
+    stages:
+      - dev
+    start:
+      port: 9432
+      noStart: false
+  serverless-offline-sns:
+    port: 4002
+    debug: true
+    accountId: '000000000000'
+      
+functions:
+  registerUser:
+    handler: src/handlers/registerUser.handler
+    events:
+      - http:
+          path: register
+          method: post
+
+  processRegisterUser:
+    handler: src/handlers/processRegisterUser.handler
+    events:
+      - sns:
+          topicName: RegisterUserTopic
+          arn:
+            Ref: RegisterUserTopic
+
+  getUser:
+    handler: src/handlers/getUser.handler
+    events:
+      - http:
+          path: user
+          method: get
+          request:
+            parameters:
+              querystrings:
+                email: true
+
+  listBoards:
+    handler: src/handlers/listBoards.handler
+    events:
+      - http:
+          path: boards
+          method: get
+
+  createBoard:
+    handler: src/handlers/createBoard.handler
+    events:
+      - http:
+          path: boards
+          method: post
+
+  processCreateBoard:
+    handler: src/handlers/processCreateBoard.handler
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - CreateBoardQueue
+              - Arn
+
+  postMessage:
+    handler: src/handlers/postMessage.handler
+    events:
+      - http:
+          path: boards/{boardId}/messages
+          method: post
+
+  processPostMessage:
+    handler: src/handlers/processPostMessage.handler
+    events:
+      - sns:
+          topicName: PostMessageTopic
+          arn:
+            Ref: PostMessageTopic
+
+  connect:
+    handler: src/handlers/websocket/connect.handler
+    events:
+      - websocket:
+          route: $connect
+
+  disconnect:
+    handler: src/handlers/websocket/disconnect.handler
+    events:
+      - websocket:
+          route: $disconnect
+
+resources:
+  Resources:
+
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: Users
+        AttributeDefinitions:
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: email
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    BoardsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: Boards
+        AttributeDefinitions:
+          - AttributeName: boardId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: boardId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    MessagesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: Messages
+        AttributeDefinitions:
+          - AttributeName: messageId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: messageId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    RegisterUserTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: RegisterUserTopic
+
+    PostMessageTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: PostMessageTopic
+
+    CreateBoardQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: CreateBoardQueue
+
+    WebSocketConnectionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: WebSocketConnections
+        AttributeDefinitions:
+          - AttributeName: connectionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: connectionId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+package:
+  individually: true
